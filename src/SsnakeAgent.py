@@ -8,16 +8,19 @@ from dotenv import load_dotenv
 import google.genai as genai
 import google.genai.types as types
 
-from helper import call_function
+# from helper import call_function
 from schemas import *
 from system_prompt import system_prompt
 from utils import *
-
+from function_map import function_map
 
 class SsnakeAgent:
     def __init__(self, user_prompt, verbose=False):
         load_dotenv()
-        with open('config.yaml', 'r') as config_file:
+        print("Current working directory: ", os.getcwd())
+        print(os.listdir())
+        install_dir = os.path.dirname(os.path.abspath(__file__))
+        with open(f'{install_dir}/../config.yaml', 'r') as config_file:
             self.internal_config = yaml.safe_load(config_file)
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
@@ -70,14 +73,21 @@ class SsnakeAgent:
                 if hasattr(part, "text") and part.text:
                     text = part.text.strip()
                     print(text)
-                    if "NOTHING ELSE TO DO HERE" in text:
-                        should_stop = True
-                        break
 
         if response.function_calls:
             function_response_parts = []
             for function_call in response.function_calls:
-                function_result_content = call_function(function_call, verbose=self.verbose)
+                function_result_content = self.call_function(function_call, verbose=self.verbose)
+                print(function_result_content)
+                
+                try:
+                    if function_result_content.parts[0].function_response.response['result']['control_signal'] == "STOP":
+                        print("PROCESS_RESPONSE: Stop signal received from function call.")
+                        should_stop = True
+                        return should_stop, self.messages
+                except:
+                    pass
+
                 result_part = function_result_content.parts[0]
                 function_response_parts.append(result_part)
 
@@ -100,11 +110,63 @@ class SsnakeAgent:
 
         return should_stop, self.messages
 
+
     def log_usage_metadata(self, response):
         if self.verbose:
             if response.usage_metadata:
                 print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
                 print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+
+
+    def call_function(self, function_call_part, verbose=False):
+        if verbose:
+            print(f"Calling function: {function_call_part.name}({function_call_part.args})")
+        else:
+            print(f" - Calling function: {function_call_part.name}")
+
+        args = {}
+        if function_call_part.name == "task_complete":
+            fn = function_map.get(function_call_part.name)
+        else:
+            args = dict(function_call_part.args)
+            # workspace = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            args["working_directory"] = self.internal_config["WORKSPACE"]
+            fn = function_map.get(function_call_part.name)
+
+        if fn is None:
+            return types.Content(
+                role="tool",
+                parts=[
+                    types.Part.from_function_response(
+                        name=function_call_part.name,
+                        response={"error": f"Unknown function: {function_call_part.name}"},
+                    )
+                ],
+            )
+        
+        result = fn(**args)
+        raw_result = result[0] if isinstance(result, tuple) else result
+        return types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(
+                    name=function_call_part.name,
+                    response={"result": result},
+                )
+            ],
+        )
+
+        # formatted_content = types.Content(
+        #     role="tool",
+        #     parts=[
+        #         types.Part.from_function_response(
+        #             name=function_call_part.name,
+        #             response=result,
+        #         )
+        #     ],
+        # )
+
+        # return formatted_content, raw_result
 
     def run(self):
         iterations = 50
@@ -117,6 +179,7 @@ class SsnakeAgent:
                 config=self.config)
 
             should_stop, self.messages = self.process_response(response)
+            print(should_stop)
             if should_stop:
                 break
 

@@ -11,6 +11,6 @@ if __name__ == "__main__":
     verbose = False
     if len(sys.argv) > 2 and sys.argv[2] == '--verbose':
         verbose = True
-
+    global agent
     agent = SsnakeAgent(user_prompt, verbose)
     agent.run()

@@ -32,6 +32,7 @@ def configure_gemini(system_prompt):
             schema_get_file_content,
             schema_write_file,
             schema_run_python_file,
+            schema_task_complete,
         ]
     )
     config=types.GenerateContentConfig(

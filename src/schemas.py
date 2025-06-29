@@ -59,3 +59,8 @@ schema_run_python_file = types.FunctionDeclaration(
         },
     ),
 )
+
+schema_task_complete = types.FunctionDeclaration(
+    name="task_complete",
+    description="Indicates the user that the task has been fulfilled and/or that the model is waiting for further instructions.",
+)
