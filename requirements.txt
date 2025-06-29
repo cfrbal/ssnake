@@ -1,0 +1,2 @@
+google-generativeai==1.21.1
+python-dotenv==0.9.9
