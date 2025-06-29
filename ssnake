@@ -6,20 +6,14 @@ import sys
 from dotenv import load_dotenv
 import google.genai as genai
 import google.genai.types as types  # Explicit import for clarity
-import argparse
+# import argparse
+from utils import *
 from schemas import *
 from system_prompt import system_prompt
 from helper import call_function
 
-# --- (Parser and initial setup code is unchanged) ---
-parser = argparse.ArgumentParser(
-                    prog='SSnake',
-                    description='What the program does',
-                    epilog='Text at the bottom of help')
 
-parser.add_argument('user_prompt')
-parser.add_argument('--verbose', action='store_true')
-args = parser.parse_args()
+args = parse_arguments()
 verbose = args.verbose
 
 load_dotenv()
