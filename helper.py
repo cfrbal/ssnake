@@ -18,7 +18,7 @@ def call_function(function_call_part, verbose=False):
         print(f" - Calling function: {function_call_part.name}")
 
     args = dict(function_call_part.args)
-    workspace = os.path.abspath(os.path.join(os.path.dirname(__file__), "../calculator"))
+    workspace = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
     args["working_directory"] = workspace
     fn = function_map.get(function_call_part.name)
 
