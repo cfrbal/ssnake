@@ -1,0 +1,4 @@
+#!/bin/bash
+echo "Starting"
+python src/ssnake.py "$@"
+echo "Done"
