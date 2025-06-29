@@ -1,20 +1,24 @@
-
+import argparse
 import os
-import time
 import sys
+import time
+import yaml
+
 from dotenv import load_dotenv
 import google.genai as genai
 import google.genai.types as types
-import argparse
-from utils import *
+
+from helper import call_function
 from schemas import *
 from system_prompt import system_prompt
-from helper import call_function
+from utils import *
 
 
 class SsnakeAgent:
     def __init__(self, user_prompt, verbose=False):
         load_dotenv()
+        with open('config.yaml', 'r') as config_file:
+            self.internal_config = yaml.safe_load(config_file)
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
         self.verbose = verbose
@@ -22,7 +26,8 @@ class SsnakeAgent:
         self.client = self.initialize_llm_client()
         self.config = self.configure_llm(system_prompt)
         self.messages = [types.Content(role="user", parts=[types.Part(text=self.user_prompt)])]
-        self.model_name = os.environ.get("GENAI_MODEL")
+        print(self.internal_config)
+        self.model_name = self.internal_config["GENAI_MODEL"]
     
     def parse_arguments(self):
         parser = argparse.ArgumentParser(
@@ -37,11 +42,11 @@ class SsnakeAgent:
 
 
     def initialize_llm_client(self):
-        if os.environ.get("MODEL_API") == "GEMINI":
+        if self.internal_config["MODEL_API"] == "GEMINI":
             return initialize_gemini_client()
 
     def configure_llm(self, system_prompt):
-        if os.environ.get("MODEL_API") == "GEMINI":
+        if self.internal_config["MODEL_API"] == "GEMINI":
             return configure_gemini(system_prompt)
 
     def process_response(self, response):

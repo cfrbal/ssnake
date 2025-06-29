@@ -1,9 +1,10 @@
 import logging
 import argparse
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
 import google.genai as genai
-import google.genai.types as types  # Explicit import for clarity
+import google.genai.types as types
+
 from schemas import *
 
 def parse_arguments():
