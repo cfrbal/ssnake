@@ -9,7 +9,7 @@ def is_directory(path):
 def is_file(path):
     return os.path.isfile(path)
 
-def get_files_info(working_directory, directory=None):
+def get_files_info(working_directory, directory="."):
     workspace_path = os.path.abspath(working_directory)
     final_directory_path = os.path.abspath(os.path.join(working_directory, directory))
     if not is_in_scope(workspace_path, final_directory_path):

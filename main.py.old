@@ -1,0 +1,96 @@
+import os
+import time
+import sys
+from dotenv import load_dotenv
+from google import genai
+import argparse
+from schemas import *
+from system_prompt import system_prompt
+from helper import call_function
+
+parser = argparse.ArgumentParser(
+                    prog='SSnake',
+                    description='What the program does',
+                    epilog='Text at the bottom of help')
+
+parser.add_argument('user_prompt')           # positional argument
+parser.add_argument('--verbose', action='store_true')
+args = parser.parse_args()
+verbose = args.verbose
+
+### Load environment variables
+load_dotenv()
+
+### Get API key for Gemini
+api_key = os.environ.get("GEMINI_API_KEY")
+
+### Create client
+client = genai.Client(api_key=api_key)
+
+### Get user prompt
+user_prompt = args.user_prompt
+if verbose:
+    print(f"User prompt: {user_prompt}")
+
+### Store prompt in list
+messages = [
+    types.Content(role="user", parts=[types.Part(text=user_prompt)]),
+]
+
+model_name = os.environ.get("GENAI_MODEL")
+available_functions = types.Tool(
+    function_declarations=[
+        schema_get_files_info,
+        schema_get_file_content,
+        schema_write_file,
+        schema_run_python_file,
+    ]
+)
+config=types.GenerateContentConfig(
+    tools=[available_functions], system_instruction=system_prompt
+)
+iterations = 50
+cached_response = ""
+while iterations > 0:
+    iterations -= 1
+    response = client.models.generate_content(
+        model=model_name,
+        contents=messages,
+        config=config)
+    should_stop = False
+    for candidate in response.candidates:
+        for part in candidate.content.parts:
+            if hasattr(part, "text") and part.text:
+                text = part.text.strip()
+                if "NOTHING ELSE TO DO HERE" in text:
+                    should_stop = True
+                    print(text)
+                    break
+        if should_stop:
+            break
+        messages.append(candidate.content)
+    if should_stop:
+        break    # Check if you exited early and break the agent loop completely if needed    
+    time.sleep(5)
+    if response.function_calls:
+        function_call_part = response.function_calls[0]
+        function_result_content = call_function(function_call_part, verbose=verbose)
+        messages.append(function_result_content)
+        if verbose:
+            # Check the structure before printing to avoid errors
+            if (
+                hasattr(function_result_content, "parts")
+                and len(function_result_content.parts) > 0
+                and hasattr(function_result_content.parts[0], "function_response")
+                and hasattr(function_result_content.parts[0].function_response, "response")
+            ):
+                print(f"-> {function_result_content.parts[0].function_response.response.get('result')}")
+            else:
+                raise Exception("No function response content!")
+    else:
+        print(response.text)
+    # Continue with the other verbose prints...
+    if verbose:
+        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+# print(response.text)

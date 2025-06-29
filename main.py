@@ -1,37 +1,35 @@
+#!/usr/bin/env python3
+
 import os
+import time
 import sys
 from dotenv import load_dotenv
-from google import genai
+import google.genai as genai
+import google.genai.types as types  # Explicit import for clarity
 import argparse
 from schemas import *
 from system_prompt import system_prompt
 from helper import call_function
 
+# --- (Parser and initial setup code is unchanged) ---
 parser = argparse.ArgumentParser(
                     prog='SSnake',
                     description='What the program does',
                     epilog='Text at the bottom of help')
 
-parser.add_argument('user_prompt')           # positional argument
+parser.add_argument('user_prompt')
 parser.add_argument('--verbose', action='store_true')
 args = parser.parse_args()
 verbose = args.verbose
 
-### Load environment variables
 load_dotenv()
-
-### Get API key for Gemini
 api_key = os.environ.get("GEMINI_API_KEY")
-
-### Create client
 client = genai.Client(api_key=api_key)
 
-### Get user prompt
 user_prompt = args.user_prompt
 if verbose:
     print(f"User prompt: {user_prompt}")
 
-### Store prompt in list
 messages = [
     types.Content(role="user", parts=[types.Part(text=user_prompt)]),
 ]
@@ -48,28 +46,89 @@ available_functions = types.Tool(
 config=types.GenerateContentConfig(
     tools=[available_functions], system_instruction=system_prompt
 )
-response = client.models.generate_content(
-    model=model_name,
-    contents=messages,
-    config=config)
+iterations = 50
 
-if response.function_calls:
-    function_call_part = response.function_calls[0]
-    function_result_content = call_function(function_call_part, verbose=verbose)
+while iterations > 0:
+    iterations -= 1
+    response = client.models.generate_content(
+        model=model_name,
+        contents=messages,
+        config=config)
+
+    # --- START OF MODIFIED BLOCK ---
+
+    # 1. Validate the response before doing anything else.
+    if not response.candidates:
+        print("AGENT STOPPING: Model returned no response.")
+        break
+
+    candidate = response.candidates[0]
+
+    # 2. Check for empty/blocked content. This is a critical safety check.
+    # The 'content' can be empty if the finish_reason is not 'STOP' or 'TOOL_CALLS'.
+    if not candidate.content or not candidate.content.parts:
+        # If the model intended to call tools, it's okay that content is empty. We proceed.
+        # If it stopped for any other reason (like SAFETY), we must halt.
+        if candidate.finish_reason.name != "TOOL_CALLS":
+            print(f"AGENT STOPPING: Model returned empty content. Finish Reason: {candidate.finish_reason.name}")
+            break
+    
+    # 3. It's now safe to append the model's response (which contains its "thoughts" or function requests)
+    messages.append(candidate.content)
+
+    should_stop = False
+    
+    # 4. Add a "guard" to the loop. Only iterate if there are parts to iterate over.
+    #    This is the direct fix for your TypeError.
+    if candidate.content and candidate.content.parts:
+        for part in candidate.content.parts:
+            if hasattr(part, "text") and part.text:
+                text = part.text.strip()
+                print(text) # Always print the text part of the model's response
+                if "NOTHING ELSE TO DO HERE" in text:
+                    should_stop = True
+                    break
+    
+    if should_stop:
+        break
+
+    # 5. Your parallel function call logic was already correct. No changes needed here.
+    #    This block runs independently of the text-handling block above.
+    if response.function_calls:
+        function_response_parts = []
+        for function_call in response.function_calls:
+            function_result_content = call_function(function_call, verbose=verbose)
+            result_part = function_result_content.parts[0]
+            function_response_parts.append(result_part)
+
+            if verbose:
+                if (hasattr(result_part, "function_response") and hasattr(result_part.function_response, "response")):
+                    response_dict = result_part.function_response.response
+                    # Check if 'content' key exists before accessing it
+                    if 'content' in response_dict:
+                         # Truncate long results for cleaner logging
+                         print(f"-> Function {result_part.function_response.name} result: {str(response_dict.get('content'))[:200]}...")
+                    else:
+                         print(f"-> Function {result_part.function_response.name} executed, no content in result.")
+                else:
+                    print("Could not display function response content.")
+
+        messages.append(
+            types.Content(
+                role="function",
+                parts=function_response_parts
+            )
+        )
+    # --- END OF MODIFIED BLOCK ---
+    
     if verbose:
-        # Check the structure before printing to avoid errors
-        if (
-            hasattr(function_result_content, "parts")
-            and len(function_result_content.parts) > 0
-            and hasattr(function_result_content.parts[0], "function_response")
-            and hasattr(function_result_content.parts[0].function_response, "response")
-        ):
-            print(f"-> {function_result_content.parts[0].function_response.response.get('result')}")
-        else:
-            raise Exception("No function response content!")
-else:
+        # Check for usage_metadata, as it might be missing in some error cases
+        if response.usage_metadata:
+            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+
+    time.sleep(1)
+
+print("\n--- Agent finished ---")
+if not should_stop and response.text:
     print(response.text)
-# Continue with the other verbose prints...
-if verbose:
-    print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-    print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
